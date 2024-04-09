@@ -6,38 +6,115 @@ import networkx as nx
 class grafo:
 
   def __init__(self,
-               repr,
+               repr=None,
                vertices=[],
+               arquivoPajek=None,
                direcionamento=False,
-               ponderacao=False):
+               ponderacao=False,
+               ):
     self.repr = repr
     self.vertices = vertices
     self.ponderacao = ponderacao
     self.direcionamento = direcionamento
     self.arestas = []
 
+    if arquivoPajek:
+            self.carregarPajek(arquivoPajek)
+
+  def salvarPajek(self, nomeArquivo):
+      with open(nomeArquivo, 'w') as file:
+          file.write("Representation: {}\n".format(self.repr))
+          file.write("Directed: {}\n".format(self.direcionamento))
+          file.write("Weighted: {}\n".format(self.ponderacao))
+
+          file.write("*Vertices {}\n".format(len(self.vertices)))
+          for i, vertice in enumerate(self.vertices, start=1):
+              file.write("{} \"{}\"\n".format(i, vertice))
+
+
+          if self.repr == "lista":
+              file.write("*Edges\n")
+              for aresta in self.arestas:
+                  file.write("{} {} {}\n".format(aresta[0], aresta[1], aresta[2]))
+          elif self.repr == "matriz":
+              file.write("*Arcs\n")
+              for i, linha in enumerate(self.matrizAdjacencia(), start=1):
+                  for j, valor in enumerate(linha, start=0):
+                      if valor != 0:
+                          file.write("{} {} {}\n".format(i, j, valor))
+          else:
+              print("Representação não suportada para salvar em formato Pajek.")
+
+      print("Grafo salvo em formato Pajek como:", nomeArquivo)
+
+  def carregarPajek(self, nome_arquivo):
+    with open(nome_arquivo, 'r') as file:
+        lines = file.readlines()
+
+    repr = None
+    vertices = []
+    arestas = []
+    direcionamento = False
+    ponderacao = False
+
+    for line in lines:
+        if line.startswith("Representation"):
+            repr = line.split(":")[1].strip()
+        elif line.startswith("Directed"):
+            direcionamento = line.split(":")[1].strip() == "True"
+        elif line.startswith("Weighted"):
+            ponderacao = line.split(":")[1].strip() == "True"
+        elif line.startswith("*Vertices"):
+            continue
+        elif line.startswith("*Edges") or line.startswith("*Arcs"):
+            if repr is None:
+                repr = "lista" if line.startswith("*Edges") else "matriz"
+        elif line.strip():  
+            parts = line.strip().split()
+            if len(parts) == 3:
+                v1, v2, peso = parts
+                v1 = v1.strip('"')
+                v2 = v2.strip('"')
+                if v1.isdigit() and v2.isdigit():
+                    arestas.append((v1, v2, float(peso)))
+            elif len(parts) == 2:
+                v = parts[1].strip('"')
+                if parts[0].isdigit():
+                    vertices.append(v)
+
+    self.repr = repr
+    self.vertices = vertices
+    self.ponderacao = ponderacao
+    self.direcionamento = direcionamento
+    self.arestas = arestas
+
   def prim(self, v1):
-    naoVisitados = self.vertices[:]
-    verticeAtual = v1 
-    menorDistancia = 10e9  
-    mst = []
-    verticeDestino = None 
+    if self.ponderacao:
+      naoVisitados = self.vertices[:]
+      verticeAtual = v1 
+      menorDistancia = 10e9  
+      mst = []
+      verticeDestino = None 
+      
+      while naoVisitados:
+        for aresta in self.arestas: 
+          if aresta[0] == verticeAtual and aresta[1] in naoVisitados: 
+            if aresta[2] < menorDistancia:
+              menorDistancia = aresta[2]	
+              verticeDestino = aresta[1]
 
-    while naoVisitados:
-      for aresta in self.arestas: 
-        if aresta[0] == verticeAtual and aresta[1] in naoVisitados: 
-          if aresta[2] < menorDistancia:
-            menorDistancia = aresta[2]	
-            verticeDestino = aresta[1]
+        mst.append((verticeAtual, verticeDestino, menorDistancia))
+        naoVisitados.remove(verticeAtual)
+        
+        verticeAtual = verticeDestino
+        menorDistancia = 10e9
+        verticeDestino = None
 
-      mst.append((verticeAtual, verticeDestino, menorDistancia))
-      naoVisitados.remove(verticeAtual)
+      mst.pop()
 
-      verticeAtual = verticeDestino
-      menorDistancia = 10e9
-      verticeDestino = None
-
-    mst.pop()
+    else: 
+      print("Esse grafo não é ponderado")
+      
     return mst
 
   def gerarGrafico(self):
@@ -46,19 +123,16 @@ class grafo:
     degrees = []
 
     for vertice in self.vertices:
-      degree = self.degree(vertice)
-      degrees.append(degree)
-      if degree not in eixoX:
-        eixoX.append(degree)
+        degree = self.degree(vertice)
+        degrees.append(degree)
+        if degree not in eixoX:
+            eixoX.append(degree)
 
-    for degree in degrees:
-      y = degrees.count(degree)
-      if y not in eixoY:
-       eixoY.append(y)
-    # print(eixoX, eixoY)
+    for degree in eixoX:
+        y = degrees.count(degree)
+        eixoY.append(y)
 
-    plt.hist(eixoX, bins=range(min(degrees), max(degrees)+ 2), weights=eixoY, width=0.1, color='pink', edgecolor='black')
-
+    plt.bar(eixoX, eixoY, color='pink', width=0.09, edgecolor='black')
 
     plt.xlabel('Degrees')
     plt.ylabel('Frequency')
@@ -67,6 +141,7 @@ class grafo:
     plt.savefig('histogram.png')
     print("Histograma salvo como PNG")
     plt.show()
+
 
   def euleriano(self, verticeInicial, verticeFinal):
     pares = []
@@ -87,7 +162,7 @@ class grafo:
       print("Esse grafo não é euleriano")
 
   def buscaProfundidade(self, verticeInicial, verticeFinal):
-    if repr == "lista":
+    if self.repr == "lista":
 
       stack = []
       visitados = []
@@ -110,7 +185,7 @@ class grafo:
       return "ERRO AO FAZER BUSCA EM PROFUNDIDADE: Esse grafo não é uma lista."
 
   def buscaLargura(self, verticeInicial, verticeFinal):
-    if repr == "lista":
+    if self.repr == "lista":
       queue = []
       visitados = []
       queue.append(verticeInicial)
@@ -259,7 +334,7 @@ class grafo:
 
   def vizinhos(self, vertice):
     self.criarLista()
-
+   
     vizinhos = []
 
     if vertice in self.vertices:
