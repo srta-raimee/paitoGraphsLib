@@ -1,480 +1,842 @@
-import time
+from sys import builtin_module_names
+from time import time
+import random
+#Imports de plotagem:
 import matplotlib.pyplot as plt
-import networkx as nx
+import seaborn as sns
 
 
-class grafo:
+class Grafo:
 
-  def __init__(self,
-               repr=None,
-               vertices=[],
-               arquivoPajek=None,
-               direcionamento=False,
-               ponderacao=False,
-               ):
+  def __init__(self, repr=None, direcionado=False, ponderado=False, arquivoPajek=None):
+
     self.repr = repr
-    self.vertices = vertices
-    self.ponderacao = ponderacao
-    self.direcionamento = direcionamento
-    self.arestas = []
+    self.direcionado = direcionado
+    self.ponderado = ponderado
+    self.vertices = []
 
+    # aqui é onde será verificada e criada a representação do grafo
     if arquivoPajek:
-            self.carregarPajek(arquivoPajek)
+      self.carregarPajek(arquivoPajek)
 
-  def salvarPajek(self, nomeArquivo):
-      with open(nomeArquivo, 'w') as file:
-          file.write("Representation: {}\n".format(self.repr))
-          file.write("Directed: {}\n".format(self.direcionamento))
-          file.write("Weighted: {}\n".format(self.ponderacao))
+    else:
+      if self.repr == "matriz":
+        self.criarMatrizAdjacencias()
 
-          file.write("*Vertices {}\n".format(len(self.vertices)))
-          for i, vertice in enumerate(self.vertices, start=1):
-              file.write("{} \"{}\"\n".format(i, vertice))
+      if self.repr == "lista":
+        self.listaDict = {}
 
+  # ======================= manipulações básicas e auxiliares do grafo ======================= #
 
-          if self.repr == "lista":
-              file.write("*Edges\n")
-              for aresta in self.arestas:
-                  file.write("{} {} {}\n".format(aresta[0], aresta[1], aresta[2]))
-          elif self.repr == "matriz":
-              file.write("*Arcs\n")
-              for i, linha in enumerate(self.matrizAdjacencia(), start=1):
-                  for j, valor in enumerate(linha, start=0):
-                      if valor != 0:
-                          file.write("{} {} {}\n".format(i, j, valor))
-          else:
-              print("Representação não suportada para salvar em formato Pajek.")
+  def adicionarVertice(self, vertice):
+    if vertice not in self.vertices:
+      self.vertices.append(vertice)
 
-      print("Grafo salvo em formato Pajek como:", nomeArquivo)
+      # Se a representacao for lista:
+      if self.repr == "lista":
+        self.listaDict[vertice] = []
 
-  def carregarPajek(self, nome_arquivo):
-    with open(nome_arquivo, 'r') as file:
-        lines = file.readlines()
+      # Se for matriz:
+      else:
+        n = len(self.matrizAdjacencias)
+        self.matrizAdjacencias.append([0] * n)  # Adiciona uma linha nova
+        for linha in self.matrizAdjacencias:  # Adiciona um 0 a mais em todas as linhas
+          linha.append(0)
 
-    repr = None
-    vertices = []
-    arestas = []
-    direcionamento = False
-    ponderacao = False
+    else:
+      print(f"A vertice {vertice} já existe")
 
-    for line in lines:
-        if line.startswith("Representation"):
-            repr = line.split(":")[1].strip()
-        elif line.startswith("Directed"):
-            direcionamento = line.split(":")[1].strip() == "True"
-        elif line.startswith("Weighted"):
-            ponderacao = line.split(":")[1].strip() == "True"
-        elif line.startswith("*Vertices"):
-            continue
-        elif line.startswith("*Edges") or line.startswith("*Arcs"):
-            if repr is None:
-                repr = "lista" if line.startswith("*Edges") else "matriz"
-        elif line.strip():  
-            parts = line.strip().split()
-            if len(parts) == 3:
-                v1, v2, peso = parts
-                v1 = v1.strip('"')
-                v2 = v2.strip('"')
-                if v1.isdigit() and v2.isdigit():
-                    arestas.append((v1, v2, float(peso)))
-            elif len(parts) == 2:
-                v = parts[1].strip('"')
-                if parts[0].isdigit():
-                    vertices.append(v)
+  def adicionarAresta(self, vertice1, vertice2, peso=1):
+    # Se o grafo não for ponderado, os pesos sao 1.
+    if not self.ponderado:
+      peso = 1
 
-    self.repr = repr
-    self.vertices = vertices
-    self.ponderacao = ponderacao
-    self.direcionamento = direcionamento
-    self.arestas = arestas
-
-  def prim(self, v1):
-    if self.ponderacao:
-      naoVisitados = self.vertices[:]
-      verticeAtual = v1 
-      menorDistancia = 10e9  
-      mst = []
-      verticeDestino = None 
-      
-      while naoVisitados:
-        for aresta in self.arestas: 
-          if aresta[0] == verticeAtual and aresta[1] in naoVisitados: 
-            if aresta[2] < menorDistancia:
-              menorDistancia = aresta[2]	
-              verticeDestino = aresta[1]
-
-        mst.append((verticeAtual, verticeDestino, menorDistancia))
-        naoVisitados.remove(verticeAtual)
+    # Verifica se os vertices existem no grafo:
+    if self.verificarVertice(vertice1, vertice2):
         
-        verticeAtual = verticeDestino
-        menorDistancia = 10e9
-        verticeDestino = None
+      # Para matriz de adjacencias:
+      if self.repr == "matriz":
+        indiceVertice1 = self.vertices.index(vertice1)
+        indiceVertice2 = self.vertices.index(vertice2)
+       
+        self.matrizAdjacencias[indiceVertice1][indiceVertice2] = peso
 
-      mst.pop()
+        # Se o grafo não for direcionado, adicione a aresta inversa
+        if not self.direcionado:
+          self.matrizAdjacencias[indiceVertice2][indiceVertice1] = peso
 
-    else: 
-      print("Esse grafo não é ponderado")
-      
-    return mst
+      # para lista de adjacências
+      else:
+        # Se ja existir a aresta, atualize o peso:
+        existe = False
+        # Percorre a lista de adjacencias do vertice1
+        for arestas in self.listaDict[vertice1]:
+          # Se encontrar, atualiza o peso da aresta:
+          if arestas[0] == vertice2:
+            self.atualizarPesoAresta(vertice1, vertice2, peso)
+            existe = True
 
-  def gerarGrafico(self):
-    eixoX = []
-    eixoY = []
-    degrees = []
+            if not self.direcionado:
+              self.atualizarPesoAresta(vertice2, vertice1, peso)
 
-    for vertice in self.vertices:
-        degree = self.degree(vertice)
-        degrees.append(degree)
-        if degree not in eixoX:
-            eixoX.append(degree)
-
-    for degree in eixoX:
-        y = degrees.count(degree)
-        eixoY.append(y)
-
-    plt.bar(eixoX, eixoY, color='pink', width=0.09, edgecolor='black')
-
-    plt.xlabel('Degrees')
-    plt.ylabel('Frequency')
-    plt.title('Histogram')
-
-    plt.savefig('histogram.png')
-    print("Histograma salvo como PNG")
-    plt.show()
-
-
-  def euleriano(self, verticeInicial, verticeFinal):
-    pares = []
-    for vertice in self.vertices:
-      degreeVertice = self.degree(vertice)
-      if degreeVertice % 2 == 0:
-        pares.append(vertice)
-
-    qtdPares = len(pares)
-    qtdVertices = len(self.vertices)
-
-    if qtdPares == qtdVertices:
-      print("Esse grafo é euleriano")
-    elif verticeInicial not in pares and verticeFinal not in pares:
-      if qtdPares == (qtdVertices - 2):
-        print("Esse grafo é euleriano")
+        # Se não existir a aresta, adicione a aresta:
+        if not existe:
+          self.listaDict[vertice1].append([vertice2, peso])
+          if not self.direcionado:
+            self.listaDict[vertice2].append([vertice1, peso])
+  
     else:
-      print("Esse grafo não é euleriano")
+      print(f"Não foi possivel adicionar a aresta entre {vertice1} e {vertice2}")
 
-  def buscaProfundidade(self, verticeInicial, verticeFinal):
-    if self.repr == "lista":
+  def removerVertice(self, vertice):
+    if vertice in self.vertices:
 
-      stack = []
-      visitados = []
-      stack.append(verticeInicial)
+      if self.repr == "lista":
 
-      while stack:
-        verticeAtual = stack.pop()
-        if verticeAtual not in visitados:
-          visitados.append(verticeAtual)
+        # cria um dict novo que exclui o vértice removido
+        for v in self.listaDict:
+          self.listaDict[v] = [(chave, valor)
+                               for chave, valor in self.listaDict[v]
+                               if chave != vertice]
 
-        for vizinho in self.vizinhos(verticeAtual):
-          if vizinho not in visitados:
-            stack.append(vizinho)
+        # Remove todas as arestas que tem o vertice como origem
+        del self.listaDict[vertice]
 
-        if verticeAtual == verticeFinal:
-          break
+      else:  # caso seja matriz
+        indiceVertice = self.vertices.index(vertice)
+        del self.vertices[indiceVertice]
 
-      return visitados
+        # Remove a linha correspondente ao vértice
+        del self.matrizAdjacencias[indiceVertice]
+
+        # Remove a coluna correspondente ao vértice
+        for linha in self.matrizAdjacencias:
+          del linha[indiceVertice]
+
     else:
-      return "ERRO AO FAZER BUSCA EM PROFUNDIDADE: Esse grafo não é uma lista."
+      print("Vértice não encontrado no grafo.")
 
-  def buscaLargura(self, verticeInicial, verticeFinal):
+  def removerAresta(self, vertice1, vertice2):
+    if self.verificarVertice(vertice1, vertice2):
+
+      if self.repr == "matriz":
+        indiceVertice1 = self.vertices.index(vertice1)
+        indiceVertice2 = self.vertices.index(vertice2)
+        self.matrizAdjacencias[indiceVertice1][indiceVertice2] = 0
+        if not self.direcionado:
+          self.matrizAdjacencias[indiceVertice2][indiceVertice1] = 0
+
+      else:  # self.repr == "lista":
+        for vertice in self.listaDict[vertice1]:
+          if vertice[0] == vertice2:
+            self.listaDict[vertice1].remove((vertice))
+
+            if not self.direcionado:
+              for vertice in self.listaDict[vertice2]:
+                if vertice[0] == vertice1:
+                  self.listaDict[vertice2].remove((vertice))
+
+    else:
+      print("Pelo menos um dos vértices não existe no grafo.")
+
+  def verificarVertice(self, *vertices):
+    return all(vertice in self.vertices for vertice in vertices)
+
+  def verificarAresta(self, vertice1, vertice2):
+    if self.verificarVertice(vertice1, vertice2):
+      if self.repr == "matriz":
+        indiceVertice1 = self.vertices.index(vertice1)
+        indiceVertice2 = self.vertices.index(vertice2)
+
+        if self.direcionado and self.matrizAdjacencias[indiceVertice1][
+            indiceVertice2]:
+          return True
+
+        elif not self.direcionado and self.matrizAdjacencias[indiceVertice1][
+            indiceVertice2] and self.matrizAdjacencias[indiceVertice2][
+                indiceVertice1]:
+          return True
+
+        else:
+          return False
+
+      else:  # para lista de adjacencias
+        for vertice in self.listaDict[vertice1]:
+          if vertice[0] == vertice2:
+            return True
+        return False
+
+  def atualizarPesoAresta(self, vertice1, vertice2, novoPeso):
+    # Verifica se a aresta existe e se o grafo é ponderado pra poder adicionar
+    if not self.verificarAresta(vertice1, vertice2):
+      if self.ponderado:
+        self.adicionarAresta(vertice1, vertice2, novoPeso)
+      else:
+        self.adicionarAresta(vertice1, vertice2)
+
+    else:  # se a aresta existe, atualiza o peso
+      if self.repr == "lista":
+        for vertice in self.listaDict[vertice1]:
+          if vertice[0] == vertice2:
+            vertice[1] = novoPeso
+
+      elif self.repr == "matriz":
+        indiceVertice1 = self.vertices.index(vertice1)
+        indiceVertice2 = self.vertices.index(vertice2)
+
+        if self.ponderado:
+          if not self.direcionado:
+            self.matrizAdjacencias[indiceVertice2][indiceVertice1] = novoPeso
+            self.matrizAdjacencias[indiceVertice1][indiceVertice2] = novoPeso
+
+          else:
+            self.matrizAdjacencias[indiceVertice1][indiceVertice2] = novoPeso
+
+  def pegaVizinhos(self, vertice1):
+    if self.repr == "matriz":
+      vizinhos = []
+
+      indiceV1 = self.vertices.index(vertice1)
+      for vertice in self.vertices:
+        indiceV2 = self.vertices.index(vertice)
+
+        if self.matrizAdjacencias[indiceV1][indiceV2] != 0:
+          vizinhos.append(vertice)
+
+      return vizinhos
+
+    else: # lista
+      vizinhos = []
+      if vertice1 in self.vertices:
+        for (vizinho, _) in self.listaDict[vertice1]:
+          vizinhos.append(vizinho)
+      return vizinhos
+
+  # def pegaVizinhosComPeso(self, vertice1):
+  #   if self.repr == "matriz":
+  #     vizinhos = []
+
+  #     indiceV1 = self.vertices.index(vertice1)
+  #     for vertice in self.vertices:
+  #       indiceV2 = self.vertices.index(vertice)
+
+  #       if self.matrizAdjacencias[indiceV1][indiceV2] != 0:
+  #         vizinhos.append( (vertice, self.matrizAdjacencias[indiceV1][indiceV2]))
+
+  #     return vizinhos
+
+  #   else: # lista
+  #     vizinhos = []
+  #     if vertice1 in self.vertices:
+  #       for (vizinho, peso) in self.listaDict[vertice1]:
+  #         vizinhos.append((vizinho, peso))
+          
+  #     return vizinhos
+
+  def recuperarPeso(self, vertice1, vertice2):
+    if self.ponderado and self.verificarAresta(vertice1, vertice2):
+      if self.repr == "matriz":
+        indiceVertice1 = self.vertices.index(vertice1)
+        indiceVertice2 = self.vertices.index(vertice2)
+
+        return self.matrizAdjacencias[indiceVertice1][indiceVertice2]
+
+      else:  # lista
+        for vertice in self.listaDict[vertice1]:
+          if vertice[0] == vertice2:
+            return vertice[1]
+
+  # ================== Funcoes de graus ================== #
+  # ----------------------------------------------------------------------- #
+  # Indegree: Calcula quantas arestas entram no vertice, ou seja, percorre
+  # todos os vertices (que não sejam o que está sendo verificado) e conta
+  # quantas vezes ele aparece.
+  def indegree(self, vertice):
+
+    # --------- Direcionado
+    if self.direcionado:
+      # Sempre bom verificar se exite o vertice
+      if vertice not in self.vertices:
+        print(
+            f"O vertice {vertice} não existe no grafo. Não foi possível calcular indegree"
+        )
+        return 0
+
+      soma = 0
+
+      if self.repr == "lista":
+        for v in self.listaDict:  # Percorre todos os vertices
+          if vertice != v:  # Pula se for a lista do vertice que está sendo verificado
+            for vizin in self.listaDict[v]:
+              # Se encontrar o vertice nas outras listas, soma 1:
+              if vizin[0] == vertice:
+                soma += 1
+
+      else:  # self.repr == "matriz":
+        i = self.vertices.index(
+            vertice)  # Pega o index do vertice na lista de vertices
+        for j in range(len(self.matrizAdjacencias)):
+          # Percorre todas as linhas da matriz (menos a do vertice, representado pelo
+          #  "j != i") e se encontrar uma ligação com o index do nosso vertice, soma 1:
+          if (j != i) and (self.matrizAdjacencias[j][i] != 0):
+            soma += 1
+
+      return soma
+
+    # --------- Não Direcionado
+    else:
+      # Independente do tipo de representação, se o grafo não for direcionado,
+      # o indegree, outdegree e degree são a mesma coisa.
+      return self.degree(vertice)
+
+  # ----------------------------------------------------------------------- #
+  # Outdegree: Calcula quantas arestas saem do vertice.
+  def outdegree(self, vertice):
+    # Sempre bom verificar se exite o vertice
+    if vertice not in self.vertices:
+      print(
+          f"O vertice {vertice} não existe no grafo. Não foi possível calcular outdegree"
+      )
+      return 0
+
+    soma = 0
+    # --------- Direcionada
+    if self.direcionado:
+      if self.repr == "lista":
+        return len(self.listaDict[vertice])
+
+      else:  #self.repr == 'matriz':
+        i = self.vertices.index(vertice)
+        # Percorre todas as possiveis arestas de saida do vertice e conta quantas tem:
+        for j in range(len(self.matrizAdjacencias[i])):
+          if self.matrizAdjacencias[i][j] != 0:
+            soma += 1
+
+    # --------- Não Direcionada
+    else:
+      # Independente do tipo de representação, se o grafo não for direcionado,
+      # o indegree, outdegree e degree são a mesma coisa.
+      return self.degree(vertice)
+
+    return soma
+
+  # ----------------------------------------------------------------------- #
+  def degree(self, vertice):
+    # Sempre bom verificar se exite o vertice
+    if vertice not in self.vertices:
+      print(
+          f"O vertice {vertice} não existe no grafo. Não foi possivel retornar o degree."
+      )
+      return 0
+
+    # --------- Direcionada
+    if self.direcionado:
+      # Sendo um grafo direcionado, o degree é sempre a soma do grau de entrada
+      # e de saída do vertice. Ou seja:
+      return self.indegree(vertice) + self.outdegree(vertice)
+
+    # --------- Não Direcionada
+    else:
+      if self.repr == "lista":
+        return len(self.listaDict[vertice])
+
+      else:  #self.repr == 'matriz':
+        soma = 0
+        i = self.vertices.index(vertice)
+        for ver in range(len(self.matrizAdjacencias[i])):
+          if self.matrizAdjacencias[i][ver] != 0:
+            soma += 1
+
+        return soma
+
+  # ======================= algoritmos de busca ======================= #
+
+  def buscaLargura(self, verticeInicial):
+    inicio = time()
     if self.repr == "lista":
+      visitas = {}
       queue = []
       visitados = []
       queue.append(verticeInicial)
 
       while queue:
+        
         verticeAtual = queue.pop(0)
 
         if verticeAtual not in visitados:
           visitados.append(verticeAtual)
 
-        for vizinho in self.vizinhos(verticeAtual):
+        for vizinho in sorted(self.pegaVizinhos(verticeAtual)):
           if vizinho not in visitados:
             queue.append(vizinho)
 
-        if verticeAtual == verticeFinal:
-          break
+        # if verticeAtual == verticeFinal:
+        #   break
 
-      return visitados
+        fim = time()
+        tempo = fim - inicio
+        visitas[verticeAtual] = (f"{tempo:.7f}")
+        
+      return visitas
+
+    else:  # para matriz
+      inicio = time()
+      queue = []
+      visitados = []
+      visitas = {}
+      queue.append(verticeInicial)
+
+      indiceVerticeInicial = self.vertices.index(verticeInicial)
+
+      while queue:
+        
+        verticeAtual = queue.pop(0)
+        indiceVerticeAtual = self.vertices.index(verticeAtual)
+
+        if verticeAtual not in visitados:
+          visitados.append(verticeAtual)
+
+          for indice, adjacente in enumerate(
+              self.matrizAdjacencias[indiceVerticeAtual]):
+
+            if adjacente != 0 and self.vertices[indice] not in visitados:
+              queue.append(self.vertices[indice])
+
+        # if verticeAtual == verticeFinal:
+        #   break
+
+        fim = time()
+        tempo = fim - inicio
+        visitas[verticeAtual] = (f"{tempo:.7f}")
+      return visitas
+
+  def buscaProfundidade(self, verticeInicial):
+    inicio = time()
+    visitas = {}
+    stack = []
+    visitados = {}
+    stack.append(verticeInicial)
+
+    while stack:
+      
+      verticeAtual = stack.pop()
+
+      if verticeAtual not in visitados:
+        visitados[verticeAtual] = True
+
+        if self.repr == "matriz":
+          indiceVerticeAtual = self.vertices.index(verticeAtual)
+          for indice, adjacente in enumerate(
+              self.matrizAdjacencias[indiceVerticeAtual]):
+
+            if adjacente != 0 and self.vertices[indice] not in visitados:
+              stack.append(self.vertices[indice])
+
+        else:  # para lista
+          for vizinho, _ in self.listaDict.get(verticeAtual, []):
+            if vizinho not in visitados:
+              stack.append(vizinho)
+              
+      # if verticeAtual == verticeFinal:
+      #   break
+      fim = time()
+      tempo = fim - inicio
+      visitas[verticeAtual] = (f"{tempo:.7f}")
+      
+    return visitas
+
+  def SCC(self): # strongly connected components
+    if self.direcionado:
+      vertice = random.choice(self.vertices)
+      originalDFS = self.buscaProfundidade(vertice)
+      grafoTransposto = self.transpor()
+      transpostoDFS = grafoTransposto.buscaProfundidade(vertice)
+
+      return len(originalDFS) == len(self.vertices) and len(transpostoDFS) == len(self.vertices)
+        
+      
     else:
-      return "ERRO AO FAZER BUSCA EM LARGURA: Esse grafo não é uma lista."
+      raise Exception("Componentes fortemente conectados só podem ser verificados em grafos direcionados")
+  
+  def transpor(self): # transpor o grafo direcionado
+    if self.direcionado:
+      if self.repr == "matriz":
+          transposta = Grafo("matriz", direcionado=self.direcionado, ponderado=self.ponderado)
+          transposta.vertices = self.vertices
+          transposta.matrizAdjacencias = [
+              [self.matrizAdjacencias[j][i] for j in range(len(self.matrizAdjacencias))] for i in
+              range(len(self.matrizAdjacencias))]
+          return transposta
+      else: # para lista
+          transposta = Grafo("lista", direcionado=self.direcionado, ponderado=self.ponderado)
+          transposta.vertices = self.vertices
+          for vertice in self.vertices:
+              transposta.listaDict[vertice] = []
+          for vertice in self.vertices:
+              for vizinho, peso in self.listaDict.get(vertice, []):
+                  transposta.listaDict[vizinho].append((vertice, peso))
+          return transposta
+    else:
+      return self
 
-  def constroiMatriz(self, vertice):
-    return [[0] * vertice for _ in range(vertice)]
+  def buscaDijkstra(self, verticeInicial, verticeFinal):
+    if self.ponderado:
+      inicio = time()
+      predecessores = {}
+      distanciaAcumulada = {}
+      for vertice in self.vertices:
+        distanciaAcumulada[vertice] = +1e10
+        predecessores[vertice] = None
+  
+      distanciaAcumulada[verticeInicial] = 0.0
+  
+      q = []
+      for vertice in self.vertices:
+        q.append(vertice)
+  
+      while len(q) > 0:
+        verticeAtual = self.min(q, distanciaAcumulada)
+        if verticeAtual is None:
+          break
+        q.remove(verticeAtual)
+  
+        for vizinho in self.pegaVizinhos(verticeAtual):
+          novaDistancia = distanciaAcumulada[verticeAtual] + \
+                       self.recuperarPeso(verticeAtual, vizinho)
+  
+          if novaDistancia < distanciaAcumulada[vizinho]:
+  
+            distanciaAcumulada[vizinho] = novaDistancia
+  
+            predecessores[vizinho] = verticeAtual
+  
+      caminho = []
+      distanciaTotal = 10e9
+  
+      if predecessores[verticeFinal] != None:
+  
+        distanciaTotal = distanciaAcumulada[verticeFinal]
+  
+        verticeAtual = verticeFinal
+        while verticeAtual != None:
+          caminho.insert(0, verticeAtual)
+          verticeAtual = predecessores[verticeAtual]
+  
+      fim = time()
+      tempo = fim - inicio
+      return caminho, distanciaTotal, f"{tempo:.7f}"
+      
+    else:
+      return None
+    
+  def min(self, q, pesosAcumulados):
+    menorCusto = None
+    pesoMinimo = +1e10
+    for vertice in q:
+      if pesosAcumulados[vertice] <= pesoMinimo:
+        pesoMinimo = pesosAcumulados[vertice]
+        menorCusto = vertice
+    return menorCusto
 
-  def copiarMatriz(self):
-    self.criarMatriz()
-    vertices = len(matriz)
-    copia = self.constroiMatriz(vertices)
+# ======================= Persistencia (arquivo pajek) ======================= #
 
-    for i in range(vertices):
-      for j in range(vertices):
-        copia[i][j] = matriz[i][j]
+  def salvarPajek(self, arquivoPajek):
+    with open(arquivoPajek, "w") as file:
+      # ---- Armazenamento dos Dados:
+      file.write(f"% representation={self.repr}\n")
+      file.write(f"% directed={self.direcionado}\n")
+      file.write(f"% weighted={self.ponderado}\n")
 
-    # print("COPIA: \n", copia)
-    return copia
-
-  def warshall(self):
-    matrizWarshall = self.copiarMatriz()
-    # print(len(matrizWarshall)) = 4
-
-    for k in range(len(matrizWarshall)):  # 4
-      for i in range(len(matrizWarshall)):
-        for j in range(len(matrizWarshall)):
-          # print(j, "\n")
-          matrizWarshall[i][j] = matrizWarshall[i][j] or (
-              matrizWarshall[i][k] and matrizWarshall[k][j])
-
-    return matrizWarshall
-
-  def criarLista(self):
-    global listaGrafo
-    listaGrafo = {}
-
-    # if self.repr == "lista":
-    for i in range(len(self.vertices)):
-        verticeAtual = self.vertices[i]
-
-        for j in range(len(self.vertices)):
-          for aresta in self.arestas:
-            if aresta[0] == self.vertices[i] and aresta[1] == self.vertices[j]:
-              if verticeAtual not in listaGrafo:
-                listaGrafo[verticeAtual] = []
-              listaGrafo[verticeAtual].append(self.vertices[j])
-
-    return listaGrafo
-
-    # else:
-    #   print("Esse grafo não é uma lista")
-
-  def criarMatriz(self):
-    listaGrafoo = self.criarLista()
-    if self.repr == "matriz":
-      print('  ', end="")
-      for l in range(len(self.vertices)):
-        print(f"{self.vertices[l]} ", end="")
-      print(end="\n")
-
-      global matriz
-      matriz = []
+      # ---- Armazenamento de Vertices:
+      file.write(f"*Vertices {len(self.vertices)}\n")
 
       for i in range(len(self.vertices)):
-        linha = []
-        verticeAtual = self.vertices[i]
-        print(f"{self.vertices[i]} ", end="")
-        for j in range(len(self.vertices)):
-          achou = False
-          for aresta in self.arestas:
-            if aresta[0] == self.vertices[i] and aresta[1] == self.vertices[j]:
-              achou = True
-              print("1 ", end="")
-              linha.append(1)
-              if verticeAtual not in listaGrafoo:
-                listaGrafoo[verticeAtual] = []
-              listaGrafoo[verticeAtual].append(self.vertices[j])
+        file.write(f"{i} {self.vertices[i]}\n")
 
-          if not achou:
-            print("0 ", end="")
-            linha.append(0)
+      # ---- Armazenamento de Arestas:
+      if self.repr == "matriz":
+        file.write("*arcs\n")
+        # Pra cada vertice
+        for i in range(len(self.matrizAdjacencias)):
+          for j in range(len(self.matrizAdjacencias[i])):
 
-        matriz.append(linha)
-        print(end="\n")
+            # Verifica se existe a aresta entre os vertices 'i' e 'j':
+            if self.matrizAdjacencias[i][j] != 0:
+              # Escreve o index do vertice de origem, de destino e por ultimo peso (se tiver)
+              aresta = f"{i} {j}"
 
-      # print(matriza)
+              if self.ponderado:
+                aresta += f" {self.matrizAdjacencias[i][j]}"
 
+              file.write(f"{aresta}\n")
+
+      else:  #self.repr == "lista":
+        file.write("*edge\n")
+        # Pra cada vertice de origem
+        for vertice in self.listaDict:
+          # Pra cada vertice ligado ao de origem
+          for arestas in self.listaDict[vertice]:
+            # Escreve o index do vertice de origem, de destino e por ultimo peso (se tiver)
+            aresta = f"{vertice} {arestas[0]}"
+
+            if self.ponderado:
+              aresta += f" {arestas[1]}"
+
+            file.write(f"{aresta}\n")
+
+  # So pra deixar o carregarPajek mais limpo
+  def clean(self, texto, retirar):
+    return texto.replace(retirar, "").replace("\n", "")
+
+
+      
+  def carregarPajek(self, arquivoPajek):
+    with open(arquivoPajek, "r") as file:
+      #  ---- Dados do Grafo:
+      representacao = file.readline()
+      direcionamento = file.readline()
+      ponderacao = file.readline()
+
+      self.repr = self.clean(representacao, "% representation=")
+      self.direcionado = bool(self.clean(direcionamento, "% directed="))
+      self.ponderado = bool(self.clean(ponderacao, "% weighted="))
+
+      if self.repr == "matriz":
+        self.criarMatrizAdjacencias()
+
+      else:  # self.repr == "lista":
+        self.listaDict = {}
+
+      #  ---- Vertices
+      # No arquivo pajek, a lista de vertice esta salva como:
+      # *Vertices n
+      # Entao criamos um 'for i' que percorra esse "n"
+      n = int(self.clean(file.readline(), "*Vertices "))
+      for _ in range(n):
+        vertice = file.readline().replace("\n", "").split(" ")
+        self.adicionarVertice(vertice[1])
+
+      #  ---- Arestas
+      file.readline()  # Retira o *arcs / *edge
+
+      if self.repr == "matriz":
+
+        linha = file.readline()
+        while linha != "":
+          print(linha)
+          aresta = linha.replace("\n", "").split(" ")
+          ver1 = self.vertices[int(aresta[0])]
+          ver2 = self.vertices[int(aresta[1])]
+
+          # Se a linha tiver peso, adiciona o peso:
+          if self.ponderado:
+            peso = int(aresta[2])
+            self.adicionarAresta(ver1, ver2, peso)
+
+          # Se nao, adiciona a aresta com 1 de "peso":
+          else:
+            self.adicionarAresta(ver1, ver2)
+
+          linha = file.readline()
+
+      else:  # self.repr == "lista":
+
+        aresta = []
+        linha = file.readline() 
+        while linha != "":
+          aresta = linha.replace("\n", "").split(" ")
+          print(aresta)
+          # Se a linha tiver peso (3° parametro), adiciona o peso:
+          if self.ponderado:
+            self.listaDict[aresta[0]].append((aresta[1], int(aresta[2])))
+          else:
+            self.listaDict[aresta[0]].append(aresta[1], 1)
+
+          linha = file.readline()
+
+  # ======================= Funções de representação ======================= #
+
+  # ===== cria matriz de adjacências =====
+
+  def criarMatrizAdjacencias(self):
+    n = len(self.vertices)
+    self.matrizAdjacencias = [[0] * n
+                              for _ in range(n)]  # Inicializa com zeros
+
+    # Preenche com 1 onde há arestas
+    for i in range(n):
+      for j in range(n):
+        if self.repr == "matriz" and self.matrizAdjacencias[i][j] != 0:
+          self.matrizAdjacencias[i][j] = 1
+
+  # ======================= Funções de fechamento transitivo ======================= #
+
+  def constroiMatriz(self, qtdVertices):
+    return [[0] * qtdVertices for _ in range(qtdVertices)]
+
+  def copiaMatriz(self):
+    if self.repr == "matriz":
+      matriz = self.matrizAdjacencias
+      qtdVertices = len(self.matrizAdjacencias)
+  
+      copia = self.constroiMatriz(qtdVertices)
+  
+      for i in range(qtdVertices):
+        for j in range(qtdVertices):
+          copia[i][j] = matriz[i][j]
+      return copia
+      
     else:
-      print("Esse grafo não é uma matriz")
-
-  def outdegree(self, v1):
-    global qtd_out
-    qtd_out = 0
-    if self.verificarVertice(v1):
-      for aresta in self.arestas:
-        if aresta[0] == v1:
-          qtd_out += 1
-
+      return None
+  
+  def warshall(self):
+    if self.repr == "matriz":
+      matrizWarshall = self.copiaMatriz()
+      for k in range(len(matrizWarshall)):
+        for i in range(len(matrizWarshall)):
+          for j in range(len(matrizWarshall)):
+            matrizWarshall[i][j] = matrizWarshall[i][j] or \
+            (matrizWarshall[i][k] and \
+             matrizWarshall[k][j])
+  
+      return matrizWarshall
+      
     else:
-      print("esse vértice não rola meu chapa")
+      return None
+  # ======================= Função de definição de grafo euleriano ======================= #
 
-    return qtd_out
+  def euleriano(self): 
+    vertice = random.choice(self.vertices)
+    if self.direcionado:  # strongly connected e ter degree e outdegree iguais
+      return self.SCC() and all(self.indegree(vertice) == self.outdegree(vertice) for vertice in self.vertices)
+    
+    else:  # não direcionado, conectado  e grau par em todos os vertices
+      return all(self.degree(vertice) % 2 == 0 for vertice in self.vertices) and len(self.buscaProfundidade(vertice)) == len(self.vertices)
 
-  def indegree(self, v1):
-    global qtd_in
-    qtd_in = 0
-    if self.verificarVertice(v1):
-      for aresta in self.arestas:
-        if aresta[1] == v1:
-          qtd_in += 1
-
+  # ======================= Funções MST - Árvore Geradora Mínima com algorítmo de Prim ======================= #
+  
+  def conexo(self): # -> grafos não direcionados
+    if not self.direcionado:
+      vertice = random.choice(self.vertices)
+      tamanho = len(self.buscaProfundidade(vertice))
+      return tamanho == len(self.vertices)
     else:
-      print("esse vértice não rola meu chapa")
-    return qtd_in
-
-  def degree(self, v1):
-    degree = self.qtdVizinhos(v1)
-    return degree
-
-  def qtdVizinhos(self, vertice):
-    self.criarLista()
-    vizinhos = []
-
-    if vertice in self.vertices:
-      for vizinho in listaGrafo[vertice]:
-        vizinhos.append(vizinho)
-
-    return len(vizinhos)
-
-  def vizinhos(self, vertice):
-    self.criarLista()
-   
-    vizinhos = []
-
-    if vertice in self.vertices:
-      for vizinho in listaGrafo[vertice]:
-        vizinhos.append(vizinho)
-
-    return vizinhos
-
-  def adicionarVertice(self, n):
-    if n in self.vertices:
-      print("Esse vértice já existe nesse grafo")
-    else:
-      self.vertices.append(n)
-      print(f"Vértice {n} adicionado com sucesso")
-
-  def tamanhoVertices(self):
-    return len(self.vertices)
-
-  def removerAresta(self, n1, n2):
-    for i in range(len(self.arestas) - 1):
-      if self.arestas[i][0] == n1 and self.arestas[i][1] == n2:
-        self.arestas.pop(i)
-        print(f"Aresta {n1} -> {n2} removida com sucesso")
-        return
-
-    print(f"Não existe aresta entre {n1} -> {n2} ")
-
-  def removerVertice(self, n):
-    if n in self.vertices:
-      self.vertices.remove(n)
-      print(f"Vértice {n} removido com sucesso")
-
-      for aresta in self.arestas[:]:
-        if n in aresta:
-          self.removerAresta(aresta[0], aresta[1])
-    else:
-      print("Esse vértice não existe nesse grafo.")
-
-  def verificarVertice(self, v):
-    if v in self.vertices:
-      return True
-    else:
-      return False
-
-  def atualizarPeso(self, v1, v2, novoPeso, direcionamento):
-    existe = False
-
-    for aresta in self.arestas:
-      if not direcionamento:
-        if (aresta[0] == v1 and aresta[1] == v2) or (aresta[0] == v2
-                                                     and aresta[1] == v1):
-          aresta[2] = novoPeso
-          existe = True
-          break
+      raise Exception("A função conexo() funciona apenas para grafos não direcionados")
+      
+  def prim(self):
+    # TODO: implementar funcao que determina se o grafo é conexo ou não
+       
+      if self.conexo() and self.ponderado and not self.direcionado:
+        
+          # lista de vertices e antecessores
+          predecessores = {}
+          pesos = {}
+          for vertice in self.vertices:
+              predecessores[vertice] = None
+              pesos[vertice] = 1e10
+  
+          # criando lista de vertices que existem no grafo original
+          q = self.vertices[:]
+      
+          while len(q) > 0:
+              # encontrar o vértice ainda não adicionado
+              # que tenha o menor peso
+              u = self.min(q, pesos)
+  
+              # remover esse vertice da lista
+              q.remove(u)
+  
+              for vizinho in self.pegaVizinhos(u):
+                  peso = self.recuperarPeso(u, vizinho)
+                  if vizinho in q and peso < pesos[vizinho]:
+                      predecessores[vizinho] = u
+                      pesos[vizinho] = peso
+          # monta novo grafo com as conexoes e pesos encontrados
+          mst = Grafo(repr=self.repr,
+                         direcionado=False,
+                         ponderado=True)
+          # copiar vertices originais
+          for vertice in self.vertices:
+            mst.adicionarVertice(vertice)
+  
+          # adiciona as arestas
+          custoAcumulado = 0
+          for verticeInicial in predecessores.keys():
+              verticeFinal = predecessores[verticeInicial]
+              if verticeFinal is not None:
+                mst.adicionarAresta(verticeInicial,
+                                     verticeFinal,
+                                     pesos[verticeInicial])
+                custoAcumulado += pesos[verticeInicial]
+  
+          #retorna a MST
+          return mst, custoAcumulado
+      
       else:
-        if aresta[0] == v1 and aresta[1] == v2:
-          aresta[2] = novoPeso
-          existe = True
-          break
-
-    if not existe:
-      if direcionamento:
-        self.arestas.append([v1, v2, novoPeso])
-      else:
-        self.arestas.append([v1, v2, novoPeso])
-        self.arestas.append([v2, v1, novoPeso])
-
-  def adicionarAresta(self, v1, v2, peso=0, direcionado=False):
-    if self.verificarVertice(v1) and self.verificarVertice(v2):
-      if direcionado:
-        self.arestas.append([v1, v2, peso])
-      else:
-        self.arestas.append([v1, v2, peso])
-        self.arestas.append([v2, v1, peso])
-    else:
-      print("Um dos vértices não existe nesse grafo.")
-
-  def printArestas(self):
-    print("\n---- Lista de arestas: ----")
-    print('   (A1 --peso-- A2)')
-
-    for i in self.arestas:
-      print(f'{i[0]} --{i[2]}--> {i[1]}')
-
-  def verificarAresta(self, v1, v2):
-    for i in range(len(self.arestas)):
-      if self.arestas[i][0] == v1 and self.arestas[i][1] == v2:
-        print(f"A aresta {v1} -> {v2} existe nesse grafo")
-        return True
-    print(f"A aresta {v1} -> {v2} não existe nesse grafo")
-    return False
-
-  def pegaPeso(self, v1, v2):
-    if self.ponderacao:
-      if self.verificarAresta(v1, v2):
-        for aresta in self.arestas:
-          if aresta[0] == v1 and aresta[1] == v2:
-            print(f"O peso da aresta {v1} -> {v2} é {aresta[2]}")
-            return aresta[2]
-      else:
-        print("Essa aresta não existe meu consagrado.")
         return None
-    else:
-      print("Esse grafo não é nem ponderado doido")
-      return 1
 
-  def buscaDijkstra (self, pontoInicial):
-    inicio = time.time()
-    naoVisitados = self.vertices.copy()
-    distancias = {vertice: 10e10 for vertice in self.vertices}
-    distancias[pontoInicial] = 0
+        
+  # ===== Plotar Grafo ==== #
+  
+  def plotarHistograma(self, arq='plotHistograma.png'):
+    # Para pegar os dados de grau prar criar o histograma:
+    graus = [self.degree(x) for x in self.vertices]
+    sns.countplot(x=graus)
 
-    while naoVisitados:
-      menorDistancia = 10e9
-      proxVertice = None
+    # Definindo as informações do plot:
+    plt.gca().set_facecolor('pink')
 
-      for vertice in naoVisitados:
-        if distancias[vertice] < menorDistancia:
-          menorDistancia = distancias[vertice]
-          proxVertice = vertice
+    # Salvar o gráfico em png
+    plt.savefig(arq, format='png', facecolor=plt.gca().get_facecolor())
+  
 
-      if proxVertice is None:
-        break
-
-      naoVisitados.remove(proxVertice)
-
-      for aresta in self.arestas:
-        if aresta[0] == proxVertice:
-          vizinho = aresta[1]
-          peso = aresta[2]
-          novaDistancia = distancias[proxVertice] + peso
-          if novaDistancia < distancias[vizinho]:
-            distancias[vizinho] = novaDistancia
-
-    fim = time.time()
-    tempo = fim - inicio
-    print(end="\n")
-    print("Tempo de busca Dijkstra: ", tempo)
-    print(distancias)
-
+  # ===== Printar o grafo ===== #
   def __str__(self):
 
-    return f"Representação: {self.repr}\nVertices: {self.vertices}\nDirecionamento: {self.direcionamento}\nPonderação: {self.ponderacao}"
+    # Printagem dos vertices:
+    toString = "\n=== Representação toString do grafo: ===\n"
+
+    # Dados do Grafo:
+    toString += "Dados do Grafo: \n"
+    toString += f"  - Representação: {self.repr}\n"
+    toString += f"  - Direcionado: {self.direcionado}\n"
+    toString += f"  - Ponderado: {self.ponderado}\n"
+
+    # Uma string da lista de vertices pra ficar mais bonito (e reutiliza-la depois)
+    toString += "Vertices: "
+
+    listaVertices = "["
+    for vertice in self.vertices:
+      listaVertices += f"{vertice}, "
+    listaVertices = listaVertices[:-2] + "]"
+
+    toString += f"{listaVertices} \n"
+
+    # Printagem da lista (se for lista): (ainda em fase de teste)
+    if self.repr == "lista":
+      toString += "Lista de adjacências:\n"
+      for vertice in self.listaDict:
+        toString += f"{vertice}: "
+        for aresta in self.listaDict[vertice]:
+          toString += f"{aresta[0]} ({aresta[1]}), "
+        toString = toString[:-2] + "\n"
+
+    # Printagem da matriz (se for matriz):
+    elif self.repr == "matriz":
+      toString += "Matriz de adjacências:\n"
+
+      listaVertices = listaVertices.replace("[", "")
+      listaVertices = listaVertices.replace("]", "")
+      listaVertices = listaVertices.replace(",", "")
+      toString += f"  {listaVertices} \n"
+
+      for i in range(len(self.matrizAdjacencias)):
+        toString += f"{self.vertices[i]} "
+        toString += str(self.matrizAdjacencias[i]).replace("[", "").replace(
+            "]", "").replace(",", "")
+        toString += "\n"
+
+    # for i in range(50):
+    #   toString += "👍"
+
+    return toString + "\n"
